@@ -7661,8 +7661,7 @@ async function loadBanners() {
   } catch(e) { return DEFAULT_BANNERS.map(d=>({...d})); }
 }
 
-async function renderSlider() {
-  const banners = await loadBanners();
+function paintSlides(banners) {
   const container = document.getElementById('slides');
   if(!container) return;
   container.innerHTML = banners.map(b=>`
@@ -7680,6 +7679,25 @@ async function renderSlider() {
     </div>`).join('');
   currentSlide = 0;
   initSlider();
+}
+
+function renderSlider() {
+  // Paint default slides instantly — no waiting on Firestore — so the banner
+  // appears at the same time as everything else, not lagging behind products.
+  paintSlides(DEFAULT_BANNERS);
+  // Then quietly fetch any saved/custom banners from Firestore and swap them
+  // in once ready, without making the user wait for the first paint.
+  loadBanners().then(banners => {
+    const changed = JSON.stringify(banners) !== JSON.stringify(DEFAULT_BANNERS);
+    if(changed) paintSlides(banners);
+  }).catch(()=>{});
+}
+
+// Used after admin saves/resets a banner — fetches fresh data and paints it
+// directly (no default-first flash), since we already know it just changed.
+async function refreshSlider() {
+  const banners = await loadBanners();
+  paintSlides(banners);
 }
 
 window.loadAdminBanners = async function() {
@@ -7754,7 +7772,7 @@ window.saveBanner = async function() {
     await setDoc(doc(db,'banners',slotId), data);
     closeModal('modal-banner');
     showToast('Slide saved! ✅','success');
-    await renderSlider();
+    await refreshSlider();
     loadAdminBanners();
   } catch(e) { showToast(friendlyError(e),'error'); }
 };
@@ -7768,7 +7786,7 @@ window.resetBannerSlot = async function(slotId, firestoreId) {
       try { await deleteDoc(doc(db,'banners',firestoreId)); } catch(e){}
     }
     showToast('Reset to default ✅','success');
-    await renderSlider();
+    await refreshSlider();
     loadAdminBanners();
   } catch(e) { showToast('Error resetting slide','error'); }
 };
